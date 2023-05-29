@@ -1,0 +1,282 @@
+---
+version: "2.1"
+
+networks:
+  TP2:
+    external: false
+
+services:
+  heimdall:
+    image: lscr.io/linuxserver/heimdall
+    container_name: heimdall
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - /home/aptalca/appdata/heimdall:/config
+    restart: unless-stopped
+    networks:
+      - TP2
+
+  swag:
+    image: lscr.io/linuxserver/swag
+    container_name: swag
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+      - URL=dockerswagduckdegab.duckdns.org
+      - SUBDOMAINS=wildcard
+      - VALIDATION=duckdns
+      - DUCKDNSTOKEN=9efb6250-0b01-4fd9-9398-e2fad91e9f8e
+    volumes:
+      - /home/aptalca/appdata/swag:/config
+    ports:
+      - '443:443'
+      - '80:80'
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+    networks:
+      - TP2
+
+  phpmyadmin:
+    image: lscr.io/linuxserver/phpmyadmin:latest
+    container_name: phpmyadmin
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - PMA_ARBITRARY=1 #optional
+      - PMA_ABSOLUTE_URI=https://dockerswagduckdegab.duckdns.org/phpmyadmin #optional
+    volumes:
+      - /path/to/appdata/config:/config
+    ports:
+      - '8081:8081'
+    restart: unless-stopped
+    networks:
+      - TP2
+
+  openldap:
+    container_name: openldap
+    image: osixia/openldap:latest
+    ports:
+      - '389:389'
+      - '636:636'
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+      - LDAP_ORGANISATION="TP Gabriel Fourtoy"
+      - LDAP_DOMAIN="openldap.dockerswagduckdegab.duckdns.org"
+    networks:
+      - TP2
+
+  ldap-gui:
+    container_name: ldap-gui
+    image: wheelybird/ldap-user-manager:latest
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+      - LDAP_URI=https://openldap.dockerswagduckdegab.duckdns.org
+      - LDAP_BASE_DN=dc=dockerswagduckdegab,dc=duckdns,dc=org
+      - LDAP_ADMIN_BIND_DN=dc=admin,dc=dockerswagduckdegab,dc=duckdns,dc=org
+      - LDAP_ADMIN_PW=admin
+      - LDAP_ADMINS_GROUP=admins
+    networks:
+      - TP2
+
+  mariadb:
+    image: lscr.io/linuxserver/mariadb
+    container_name: mariadb
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - MYSQL_ROOT_PASSWORD=mariadbpassword
+      - TZ=Europe/London
+      - MYSQL_DATABASE=WP_database
+      - MYSQL_USER=WP_dbuser
+      - MYSQL_PASSWORD=WP_dbpassword
+    volumes:
+      - /home/aptalca/appdata/mariadb:/config
+    restart: unless-stopped
+    networks:
+      - TP2
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+      - "8087:8087"
+    volumes:
+      - data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - TP2
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+
+  dhcp:
+    image: studiowebux/dhcp-server:latest
+    container_name: dhcp
+    networks:
+      - TP2
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    restart: unless-stopped
+    ports:
+      - "67:67/udp"
+    volumes:
+      - "/sys/fs/cgroup:/sys/fs/cgroup:ro"
+      - "/tmp/.dhcp-server:/run"
+
+  bind9:
+    image: ubuntu/bind9:latest
+    container_name: bind9
+    networks:
+      - TP2
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    restart: unless-stopped
+    ports:
+      - "30053:53"
+
+  zabbix-appliance:
+    container_name: zabbix-appliance
+    image: zabbix/zabbix-appliance:ubuntu-latest
+    networks:
+      - TP2
+    ports:
+      - "10051:10051"
+      - "8083:8083"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    restart: unless-stopped
+
+  Squid:
+    image: sameersbn/squid:3.5.27-2
+    ports:
+      - "3128:3128"
+    volumes:
+      - /srv/docker/squid/cache:/var/spool/squid
+    restart: unless-stopped
+    networks:
+      - TP2
+
+  syslog-ng:
+    image: lscr.io/linuxserver/syslog-ng:latest
+    container_name: syslog-ng
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - /path/to/config:/config
+      - /path/to/log:/var/log #optional
+    ports:
+      - 514:5514/udp
+      - 601:6601/tcp
+      - 6514:6514/tcp
+    restart: unless-stopped
+    networks:
+      - TP2
+
+  matomo-db:
+    container_name: matomo-db
+    image: mariadb:10.11
+    command: --max-allowed-packet=64MB
+    restart: unless-stopped
+    volumes:
+      - db:/var/lib/mysql:Z
+    environment:
+      - MYSQL_ROOT_PASSWORD=
+      - MARIADB_AUTO_UPGRADE=1
+      - MARIADB_DISABLE_UPGRADE_BACKUP=1
+    env_file:
+      - ./Matomo/db.env
+
+  matomo:
+    container_name: matomo
+    image: matomo:fpm-alpine
+    restart: unless-stopped
+    links:
+      - matomo-db
+    volumes:
+      - matomo:/var/www/html:z
+    environment:
+      - MATOMO_DATABASE_HOST=db
+      - PHP_MEMORY_LIMIT=2048M
+    env_file:
+      - ./Matomo/db.env
+    networks:
+      - TP2
+
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: wireguard
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - /path/to/appdata/config:/config
+    ports:
+      - 51820:51820/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    networks:
+      - TP2
+
+  wireshark:
+    image: lscr.io/linuxserver/wireshark:latest
+    container_name: wireshark
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - /path/to/config:/config
+    ports:
+      - "8085:8085"
+    restart: unless-stopped
+    networks:
+      - TP2
+
+  zap:
+    container_name: zap
+    image: owasp/zap2docker-stable:latest
+    networks:
+      - TP2
+    ports:
+      - "8086:8086"
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+
+volumes:
+  db:
+  matomo:
+  db_data:
+  openldap_data:
+    driver: local
+  data:
